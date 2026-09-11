@@ -2,6 +2,8 @@
 
 A console-based version of Tetris written in Rust.
 
+![Screen shot](screen_shot.png)
+
 This project is a port of [gotetris](https://github.com/jjinux/gotetris), a
 version of Tetris that I ([@jjinux](https://github.com/jjinux)) wrote in Go.
 [Claude Code](https://claude.com/claude-code) did the port under my direction

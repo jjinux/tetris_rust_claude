@@ -101,7 +101,7 @@ Decisions JJ made are marked "Decision (JJ)".
   - [x] Install / build / run / test / lint instructions.
   - [x] Controls.
   - [x] Credits (termbox-go -> crossterm, Alexei Kourbatov, the Dart port).
-  - [ ] Optional: add a screenshot like the Go README has.
+  - [x] Add a screenshot like the Go README has (JJ provided it).
 - [x] Add a GitHub Actions workflow (`.github/workflows/ci.yml`) running fmt, clippy, and tests on push.
 - [ ] Nice-to-haves (not required; decide later):
   - [ ] Guard against terminals that are too small to draw the board.
