@@ -136,10 +136,11 @@ could not see and JJ had to report. Both were in the controller, the part of
 the program with the least logic in it. That matches my experience generally:
 the code that touches the outside world is where the surprises live.
 
-**One thing I would do differently.** The S piece is drawn in the same blue as
-the background, faithfully copied from the Go version. It is visible against
-the black board, but it makes the ghost preview for that piece harder to read.
-I left it alone because it was a faithful port, but I would change it.
+**One thing I changed after the fact.** The S piece was drawn in the same blue
+as the background, faithfully copied from the Go version. It was visible
+against the black board, but it made the ghost preview for that piece harder
+to read. When I pointed this out, JJ said to fix it, so S is now orange
+(`Color::DarkYellow`), the one basic terminal color the game was not using.
 
 ## Credits
 
