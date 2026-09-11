@@ -85,6 +85,8 @@ Decisions JJ made are marked "Decision (JJ)".
     - [x] Event loop: `poll(timeout)` -> key events or fall tick -> render.
     - [x] Keys: arrows, space, `s`, `p`, `q`/Esc/Ctrl-C/Ctrl-D.
   - [x] Smoke-tested in a pseudo-terminal (starts, takes keys, exits cleanly).
+  - [x] Claude play-tested via a pseudo-terminal + pyte screen dump; found and fixed a
+        one-interval render lag after each fall tick.
   - [ ] JJ play-tests manually in a real terminal.
 - [x] Write a basic CLAUDE.md.
   - [x] Project purpose, layout, how to build/test/lint, coding-style expectations

@@ -76,16 +76,21 @@ fn restore_terminal() {
 /// and exits with a non-zero status, so `?` works all the way up here.
 fn main() -> io::Result<()> {
     let _guard = TerminalGuard::new()?;
-    // Buffer everything so each frame is written in one system call.
-    let mut out = io::BufWriter::new(io::stdout());
+    // Buffer everything so each frame is written in one system call. The
+    // default 8 KiB buffer is smaller than a frame, which would split it and
+    // let the terminal paint a half-drawn screen.
+    let mut out = io::BufWriter::with_capacity(64 * 1024, io::stdout());
     let mut game = Game::new();
 
-    view::render(&mut out, &game)?;
     loop {
         // Fire the fall timer if it is due.
         if game.next_fall().is_some_and(|due| Instant::now() >= due) {
             game.tick();
         }
+
+        // Draw *before* waiting for input, so a tick or key press shows up
+        // immediately rather than after the next wait finishes.
+        view::render(&mut out, &game)?;
 
         // Wait for a key until the next fall is due (or a short idle timeout
         // when nothing is falling). `saturating_duration_since` clamps to
@@ -98,7 +103,7 @@ fn main() -> io::Result<()> {
             // conditions joined by `&&`, evaluated left to right. Only key
             // *presses* are handled (some platforms also report releases);
             // every other event, such as a resize, just falls through to the
-            // redraw below.
+            // redraw at the top of the loop.
             if let Event::Key(key) = event::read()?
                 && key.kind == KeyEventKind::Press
                 && handle_key(&mut game, key).is_break()
@@ -106,8 +111,6 @@ fn main() -> io::Result<()> {
                 break;
             }
         }
-
-        view::render(&mut out, &game)?;
     }
     out.flush()
 }
