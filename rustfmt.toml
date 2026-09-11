@@ -1,0 +1,7 @@
+# rustfmt configuration. Only stable options are used here so that `cargo fmt`
+# works on the stable toolchain. See https://rust-lang.github.io/rustfmt/ for
+# the full list.
+edition = "2024"
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true

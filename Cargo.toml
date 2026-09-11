@@ -1,0 +1,29 @@
+[package]
+name = "tetris_rust_claude"
+version = "0.1.0"
+edition = "2024"
+description = "Tetris in Rust (by Claude Code): a console Tetris, ported from gotetris."
+license = "MIT"
+repository = "https://github.com/jjinux/tetris_rust_claude"
+publish = false
+
+[dependencies]
+crossterm = "0.29.0"
+rand = "0.10.2"
+
+# Cargo has no "scripts" section like package.json, but it does let you
+# configure lints for the whole crate here instead of with attributes in
+# every file. `cargo clippy` reads this table.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+# `pedantic` is a large group of opinionated lints that are off by default.
+# `priority = -1` makes sure the individual lints below override the group.
+pedantic = { level = "warn", priority = -1 }
+# The board is 10x16, so converting between `usize`, `i32`, and `u16` can
+# never actually truncate or wrap. Silencing these keeps the code readable
+# instead of littering it with `try_from(...).unwrap()`.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
