@@ -24,7 +24,7 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 
-use crate::model::Game;
+use crate::model::{Game, GameState};
 
 /// How long to wait for a key when no fall is scheduled (intro, pause, over).
 const IDLE_TIMEOUT: Duration = Duration::from_millis(100);
@@ -117,8 +117,13 @@ fn main() -> io::Result<()> {
                     dirty = true;
                 }
                 // The terminal was resized, so the background needs
-                // repainting before the next frame.
-                Event::Resize(..) => {
+                // repainting before the next frame. If it is now too small
+                // to show the board, pause so the player doesn't lose a
+                // piece they can't see.
+                Event::Resize(columns, rows) => {
+                    if !view::fits(columns, rows) && game.state() == GameState::Started {
+                        game.pause();
+                    }
                     view::clear(&mut out)?;
                     dirty = true;
                 }

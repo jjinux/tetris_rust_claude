@@ -56,6 +56,33 @@ const INSTRUCTIONS: [&str; 10] = [
     "esc,q  Exit",
 ];
 
+/// The smallest terminal the layout fits in: the instructions column plus a
+/// margin, and the board plus a margin.
+pub const MIN_COLUMNS: u16 = INSTRUCTIONS_X + longest(&INSTRUCTIONS) as u16 + MARGIN_WIDTH;
+pub const MIN_ROWS: u16 = BOARD_Y + BOARD_HEIGHT as u16 + MARGIN_HEIGHT;
+
+/// Length of the longest string in `lines`.
+///
+/// A `const fn` can be evaluated at compile time, so `MIN_COLUMNS` above is a
+/// real constant. Const functions can't use iterators or `for` loops yet,
+/// hence the manual `while`.
+const fn longest(lines: &[&str]) -> usize {
+    let mut max = 0;
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].len() > max {
+            max = lines[i].len();
+        }
+        i += 1;
+    }
+    max
+}
+
+/// Whether a terminal of the given size is big enough to draw the game.
+pub fn fits(columns: u16, rows: u16) -> bool {
+    columns >= MIN_COLUMNS && rows >= MIN_ROWS
+}
+
 /// The color used to draw a locked or falling square of the given kind.
 fn piece_color(kind: PieceKind) -> Color {
     match kind {
@@ -101,11 +128,29 @@ pub fn clear(out: &mut impl Write) -> io::Result<()> {
 /// the bytes.
 pub fn render(out: &mut impl Write, game: &Game) -> io::Result<()> {
     queue!(out, BeginSynchronizedUpdate)?;
-    draw_board(out, game)?;
-    draw_ghost(out, game)?;
-    draw_status(out, game)?;
+    let (columns, rows) = terminal::size()?;
+    if fits(columns, rows) {
+        draw_board(out, game)?;
+        draw_ghost(out, game)?;
+        draw_status(out, game)?;
+    } else {
+        draw_too_small(out, columns, rows)?;
+    }
     queue!(out, EndSynchronizedUpdate)?;
     out.flush()
+}
+
+/// Tell the player the window is too small instead of drawing a mangled board.
+fn draw_too_small(out: &mut impl Write, columns: u16, rows: u16) -> io::Result<()> {
+    let lines = [
+        "Terminal too small.".to_string(),
+        format!("Need at least {MIN_COLUMNS}x{MIN_ROWS}, have {columns}x{rows}."),
+        "Resize the window, or press q to quit.".to_string(),
+    ];
+    for (i, line) in lines.iter().enumerate() {
+        print_at(out, 0, i as u16, TEXT_COLOR, BACKGROUND_COLOR, line)?;
+    }
+    Ok(())
 }
 
 fn draw_board(out: &mut impl Write, game: &Game) -> io::Result<()> {
@@ -211,4 +256,26 @@ fn print_at(
         SetBackgroundColor(bg),
         Print(text)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn longest_finds_the_longest_line() {
+        assert_eq!(longest(&["a", "abc", "ab"]), 3);
+        assert_eq!(longest(&[]), 0);
+    }
+
+    #[test]
+    fn minimum_size_covers_the_layout() {
+        // Margin 2 + board 10 * 2 + margin 2 = 24 columns, then the legend
+        // and a trailing margin.
+        assert_eq!(MIN_COLUMNS, 24 + "Goal: Fill in 5 lines!".len() as u16 + 2);
+        assert_eq!(MIN_ROWS, 3 + 16 + 1);
+        assert!(fits(MIN_COLUMNS, MIN_ROWS));
+        assert!(!fits(MIN_COLUMNS - 1, MIN_ROWS));
+        assert!(!fits(MIN_COLUMNS, MIN_ROWS - 1));
+    }
 }
