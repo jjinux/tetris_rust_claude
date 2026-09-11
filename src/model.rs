@@ -20,6 +20,9 @@ pub const BOARD_WIDTH: usize = 10;
 pub const BOARD_HEIGHT: usize = 16;
 
 const NUM_SQUARES: usize = 4;
+/// New pieces appear at the top of the board, horizontally centered.
+const SPAWN_X: i32 = (BOARD_WIDTH / 2) as i32;
+const SPAWN_Y: i32 = 0;
 const DEFAULT_LEVEL: u32 = 1;
 const MAX_LEVEL: u32 = 10;
 const ROWS_PER_LEVEL: u32 = 5;
@@ -93,10 +96,8 @@ impl Piece {
     fn spawn(kind: PieceKind) -> Piece {
         Piece {
             kind,
-            // `as` converts between numeric types. `usize -> i32` is fine
-            // here because the board is tiny.
-            x: (BOARD_WIDTH / 2) as i32,
-            y: 0,
+            x: SPAWN_X,
+            y: SPAWN_Y,
             offsets: kind.offsets(),
         }
     }
@@ -464,9 +465,21 @@ impl Default for Game {
 mod tests {
     use super::*;
 
+    /// Any fixed seed works; tests that care about the piece set it directly.
+    const SEED: u64 = 1;
+    /// The O piece is a 2x2 square whose top-left is the spawn point, so it
+    /// covers columns `O_LEFT` and `O_RIGHT` and is `O_HEIGHT` rows tall.
+    const O_LEFT: usize = SPAWN_X as usize;
+    const O_RIGHT: usize = O_LEFT + 1;
+    const O_HEIGHT: usize = 2;
+    const BOTTOM: usize = BOARD_HEIGHT - 1;
+    /// Lines needed to reach the top level, since each level needs
+    /// `ROWS_PER_LEVEL` lines and we start on `DEFAULT_LEVEL`.
+    const LINES_FOR_MAX_LEVEL: u32 = (MAX_LEVEL - DEFAULT_LEVEL) * ROWS_PER_LEVEL;
+
     /// A started game with a known piece, ignoring whatever the RNG chose.
     fn game_with(kind: PieceKind) -> Game {
-        let mut game = Game::with_seed(1);
+        let mut game = Game::with_seed(SEED);
         game.start();
         game.piece = Some(Piece::spawn(kind));
         game
@@ -482,9 +495,9 @@ mod tests {
 
     #[test]
     fn new_game_is_in_intro_state() {
-        let game = Game::with_seed(1);
+        let game = Game::with_seed(SEED);
         assert_eq!(game.state(), GameState::Intro);
-        assert_eq!(game.level(), 1);
+        assert_eq!(game.level(), DEFAULT_LEVEL);
         assert_eq!(game.num_lines(), 0);
         assert!(game.piece().is_none());
         assert!(game.next_fall().is_none());
@@ -492,7 +505,7 @@ mod tests {
 
     #[test]
     fn start_spawns_a_piece_and_starts_the_timer() {
-        let mut game = Game::with_seed(1);
+        let mut game = Game::with_seed(SEED);
         game.start();
         assert_eq!(game.state(), GameState::Started);
         assert!(game.piece().is_some());
@@ -501,8 +514,8 @@ mod tests {
 
     #[test]
     fn same_seed_gives_same_pieces() {
-        let mut a = Game::with_seed(42);
-        let mut b = Game::with_seed(42);
+        let mut a = Game::with_seed(SEED);
+        let mut b = Game::with_seed(SEED);
         a.start();
         b.start();
         assert_eq!(a.piece(), b.piece());
@@ -510,7 +523,7 @@ mod tests {
 
     #[test]
     fn pause_stops_the_timer_and_resume_restarts_it() {
-        let mut game = Game::with_seed(1);
+        let mut game = Game::with_seed(SEED);
         game.start();
         game.pause();
         assert_eq!(game.state(), GameState::Paused);
@@ -525,7 +538,7 @@ mod tests {
 
     #[test]
     fn input_is_ignored_before_the_game_starts() {
-        let mut game = Game::with_seed(1);
+        let mut game = Game::with_seed(SEED);
         game.move_left();
         game.rotate();
         game.fall();
@@ -586,8 +599,9 @@ mod tests {
         while game.move_down() {
             moves += 1;
         }
-        // The O piece is 2 tall and spawns at y = 0, so it can drop 14 rows.
-        assert_eq!(moves, BOARD_HEIGHT - 2);
+        // The O piece spawns at the top, so it can drop until it sits on the
+        // floor.
+        assert_eq!(moves, BOARD_HEIGHT - O_HEIGHT);
         assert!(!game.move_down());
     }
 
@@ -602,10 +616,10 @@ mod tests {
             .filter(|cell| cell.is_some())
             .count();
         assert_eq!(locked, NUM_SQUARES);
-        assert_eq!(game.board[BOARD_HEIGHT - 1][5], Some(PieceKind::O));
-        assert_eq!(game.board[BOARD_HEIGHT - 2][6], Some(PieceKind::O));
+        assert_eq!(game.board[BOTTOM][O_LEFT], Some(PieceKind::O));
+        assert_eq!(game.board[BOTTOM - 1][O_RIGHT], Some(PieceKind::O));
         assert!(game.piece().is_some(), "a new piece should have spawned");
-        assert_eq!(game.piece().unwrap().y, 0);
+        assert_eq!(game.piece().unwrap().y, SPAWN_Y);
         assert_eq!(game.state(), GameState::Started);
     }
 
@@ -613,7 +627,7 @@ mod tests {
     fn tick_moves_the_piece_down_one_row() {
         let mut game = game_with(PieceKind::O);
         game.tick();
-        assert_eq!(game.piece().unwrap().y, 1);
+        assert_eq!(game.piece().unwrap().y, SPAWN_Y + 1);
     }
 
     #[test]
@@ -621,58 +635,63 @@ mod tests {
         let mut game = game_with(PieceKind::O);
         while game.move_down() {}
         game.tick();
-        assert_eq!(game.board[BOARD_HEIGHT - 1][5], Some(PieceKind::O));
-        assert_eq!(game.piece().unwrap().y, 0, "a fresh piece spawned");
+        assert_eq!(game.board[BOTTOM][O_LEFT], Some(PieceKind::O));
+        assert_eq!(game.piece().unwrap().y, SPAWN_Y, "a fresh piece spawned");
     }
 
     #[test]
     fn completing_a_row_removes_it() {
         let mut game = game_with(PieceKind::O);
-        let bottom = BOARD_HEIGHT - 1;
-        // Leave a 2-wide gap where the O piece will land (x = 5 and 6).
-        fill_row(&mut game, bottom, &[5, 6]);
-        fill_row(&mut game, bottom - 1, &[5, 6]);
+        // Leave a gap exactly where the O piece will land.
+        fill_row(&mut game, BOTTOM, &[O_LEFT, O_RIGHT]);
+        fill_row(&mut game, BOTTOM - 1, &[O_LEFT, O_RIGHT]);
         game.fall();
-        assert_eq!(game.num_lines(), 2);
+        assert_eq!(game.num_lines(), O_HEIGHT as u32);
         assert!(game.board.iter().flatten().all(Option::is_none));
     }
 
     #[test]
     fn rows_above_a_removed_row_shift_down() {
         let mut game = game_with(PieceKind::O);
-        let bottom = BOARD_HEIGHT - 1;
-        fill_row(&mut game, bottom, &[5, 6]);
+        fill_row(&mut game, BOTTOM, &[O_LEFT, O_RIGHT]);
         // A lone cell on the row above should drop to the bottom.
-        game.board[bottom - 1][0] = Some(PieceKind::I);
+        game.board[BOTTOM - 1][0] = Some(PieceKind::I);
         game.fall();
         assert_eq!(game.num_lines(), 1);
-        assert_eq!(game.board[bottom][0], Some(PieceKind::I));
+        assert_eq!(game.board[BOTTOM][0], Some(PieceKind::I));
         // The other half of the O piece survives.
-        assert_eq!(game.board[bottom][5], Some(PieceKind::O));
-        assert_eq!(game.board[bottom][6], Some(PieceKind::O));
-        assert_eq!(game.board[bottom - 1][0], None);
+        assert_eq!(game.board[BOTTOM][O_LEFT], Some(PieceKind::O));
+        assert_eq!(game.board[BOTTOM][O_RIGHT], Some(PieceKind::O));
+        assert_eq!(game.board[BOTTOM - 1][0], None);
     }
 
     #[test]
     fn level_rises_every_five_lines_and_caps_at_ten() {
-        let mut game = Game::with_seed(1);
-        assert_eq!(game.level(), 1);
-        game.num_lines = 4;
-        assert_eq!(game.level(), 1);
-        game.num_lines = 5;
-        assert_eq!(game.level(), 2);
-        game.num_lines = 45;
-        assert_eq!(game.level(), 10);
-        game.num_lines = 500;
-        assert_eq!(game.level(), 10);
+        let mut game = Game::with_seed(SEED);
+        assert_eq!(game.level(), DEFAULT_LEVEL);
+        game.num_lines = ROWS_PER_LEVEL - 1;
+        assert_eq!(game.level(), DEFAULT_LEVEL);
+        game.num_lines = ROWS_PER_LEVEL;
+        assert_eq!(game.level(), DEFAULT_LEVEL + 1);
+        game.num_lines = LINES_FOR_MAX_LEVEL;
+        assert_eq!(game.level(), MAX_LEVEL);
+        game.num_lines = LINES_FOR_MAX_LEVEL * 10;
+        assert_eq!(game.level(), MAX_LEVEL);
     }
 
     #[test]
     fn speed_gets_faster_with_level() {
-        let mut game = Game::with_seed(1);
-        assert_eq!(game.speed(), Duration::from_millis(640));
-        game.num_lines = 45;
-        assert_eq!(game.speed(), Duration::from_millis(100));
+        let mut game = Game::with_seed(SEED);
+        assert_eq!(
+            game.speed(),
+            SLOWEST_SPEED.saturating_sub(SPEED_STEP * DEFAULT_LEVEL)
+        );
+        game.num_lines = LINES_FOR_MAX_LEVEL;
+        assert_eq!(
+            game.speed(),
+            SLOWEST_SPEED.saturating_sub(SPEED_STEP * MAX_LEVEL)
+        );
+        assert!(game.speed() > Duration::ZERO);
     }
 
     #[test]
@@ -680,7 +699,7 @@ mod tests {
         let mut game = game_with(PieceKind::O);
         // Fill every row below the spawning piece, leaving column 0 open so
         // that no row completes. The O piece then locks in rows 0 and 1.
-        for y in 2..BOARD_HEIGHT {
+        for y in O_HEIGHT..BOARD_HEIGHT {
             fill_row(&mut game, y, &[0]);
         }
         game.fall();
@@ -703,11 +722,11 @@ mod tests {
     #[test]
     fn cell_shows_the_falling_piece_over_the_board() {
         let game = game_with(PieceKind::O);
-        // O piece at (5, 0) covers (5,0) (6,0) (6,1) (5,1).
-        assert_eq!(game.cell(5, 0), Some(PieceKind::O));
-        assert_eq!(game.cell(6, 1), Some(PieceKind::O));
-        assert_eq!(game.cell(4, 0), None);
-        assert_eq!(game.cell(0, BOARD_HEIGHT - 1), None);
+        let top = SPAWN_Y as usize;
+        assert_eq!(game.cell(O_LEFT, top), Some(PieceKind::O));
+        assert_eq!(game.cell(O_RIGHT, top + 1), Some(PieceKind::O));
+        assert_eq!(game.cell(O_LEFT - 1, top), None);
+        assert_eq!(game.cell(0, BOTTOM), None);
     }
 
     #[test]
@@ -715,10 +734,15 @@ mod tests {
         let game = game_with(PieceKind::O);
         let mut ghost = game.ghost_cells();
         ghost.sort_unstable();
-        let bottom = BOARD_HEIGHT as i32 - 1;
+        let (left, right, bottom) = (O_LEFT as i32, O_RIGHT as i32, BOTTOM as i32);
         assert_eq!(
             ghost,
-            vec![(5, bottom - 1), (5, bottom), (6, bottom - 1), (6, bottom)]
+            vec![
+                (left, bottom - 1),
+                (left, bottom),
+                (right, bottom - 1),
+                (right, bottom)
+            ]
         );
     }
 
