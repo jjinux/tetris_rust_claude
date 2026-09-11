@@ -84,12 +84,15 @@ pub fn fits(columns: u16, rows: u16) -> bool {
 }
 
 /// The color used to draw a locked or falling square of the given kind.
+///
+/// These follow the Go version except for S, which was `Blue`, the same as the
+/// background. `DarkYellow` renders as orange on most terminal palettes.
 fn piece_color(kind: PieceKind) -> Color {
     match kind {
         PieceKind::T => Color::Red,
         PieceKind::J => Color::Green,
         PieceKind::L => Color::Yellow,
-        PieceKind::S => Color::Blue,
+        PieceKind::S => Color::DarkYellow,
         PieceKind::Z => Color::Magenta,
         PieceKind::I => Color::Cyan,
         PieceKind::O => Color::White,
