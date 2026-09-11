@@ -40,9 +40,15 @@ If `just` is not installed, the recipes are one-line `cargo` commands; see
 
 - `TODO.md` is the plan. Check items off as they are finished and add new
   items as they come up.
-- Commit straight to `main` and push to https://github.com/jjinux/tetris_rust_claude.
-  No pull requests needed.
-- CI (`.github/workflows/ci.yml`) runs `just check` on every push.
+- Never commit directly to `main`. Create a branch, push it, and open a pull
+  request with `gh pr create` against https://github.com/jjinux/tetris_rust_claude.
+  JJ reviews and merges.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org):
+  `<type>(<optional scope>): <description>`, e.g. `feat(model): add hold piece`,
+  `fix(view): pad status lines`, `docs: explain PR workflow`, `chore: bump crossterm`,
+  `test(model): cover wall kicks`, `refactor`, `ci`. Use the imperative mood and
+  keep the subject under 72 characters; put details in the body.
+- CI (`.github/workflows/ci.yml`) runs `just check` on every push and pull request.
 
 ## Dependencies
 
