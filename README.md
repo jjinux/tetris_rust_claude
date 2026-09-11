@@ -57,7 +57,8 @@ The code follows the same loose MVC split as the Go original:
 
 - `src/model.rs`: the game state and rules. No terminal code, so it is unit
   tested in the same file.
-- `src/view.rs`: draws a `Game` with [crossterm](https://github.com/crossterm-rs/crossterm).
+- `src/view.rs`: draws a `Game` with [ratatui](https://ratatui.rs) widgets. Tested against
+  ratatui's in-memory `TestBackend`.
 - `src/main.rs`: the controller. Sets up the terminal and runs the event loop.
 
 `TODO.md` is the running plan for the project and `CLAUDE.md` holds the notes
@@ -121,12 +122,17 @@ found by running the game rather than reading it.
   tests. It's just a simple video game ;)". Separating the model from the
   terminal made them easy to write, and they caught a bounds bug in my first
   version of `fits` before it ever ran.
-- Rendering is different because the libraries are. termbox keeps a back
-  buffer and only emits cells that changed. crossterm sends exactly what you
-  queue, and my first version repainted the whole screen ten times a second,
-  which flickered badly on JJ's terminal. The fix was to paint the background
-  once, redraw only when something changed, and wrap frames in a synchronized
-  update.
+- Rendering went through three versions. termbox keeps a back buffer and
+  only emits cells that changed. My first version used crossterm directly and
+  repainted the whole screen ten times a second, which flickered badly on
+  JJ's terminal. The second version painted the background once and redrew
+  only when something changed. The third, current version uses ratatui, which
+  brings back the termbox model: the view paints a complete frame into an
+  in-memory buffer, and the library diffs it against the previous frame. A
+  frame after a key press went from about 5 KB to about 100 bytes, and the
+  view gained real unit tests through ratatui's `TestBackend`. JJ chose
+  ratatui over a hand-rolled buffer because it is a better base for future
+  games.
 
 **The two bugs I am glad I caught.** The first: every automatic fall showed up
 one interval late, because the loop ticked the timer, then waited in `poll`,
@@ -146,6 +152,7 @@ to read. When I pointed this out, JJ said to fix it, so S is now orange
 
 - The Go original, [gotetris](https://github.com/jjinux/gotetris), was built on
   [termbox-go](https://github.com/nsf/termbox-go). This port uses
+  [ratatui](https://ratatui.rs) on top of
   [crossterm](https://github.com/crossterm-rs/crossterm) instead.
 - gotetris was inspired by [Alexei Kourbatov](http://www.javascripter.net) and
   by my earlier port of Tetris to Dart.

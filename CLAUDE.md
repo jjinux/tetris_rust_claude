@@ -52,6 +52,10 @@ If `just` is not installed, the recipes are one-line `cargo` commands; see
 
 ## Dependencies
 
-- `crossterm` for the terminal (raw mode, alternate screen, colors, key events).
+- `ratatui` (0.30) for drawing: `Terminal::draw`, `Frame`, `Buffer`, the `Widget`
+  trait, `Paragraph`, `Block`. It double-buffers and diffs frames for us. View
+  tests use `ratatui::backend::TestBackend`.
+- `crossterm` (0.29, the version ratatui's `crossterm` feature uses) for key events,
+  `event::poll`, and the synchronized-update markers around each frame.
 - `rand` (0.10) for piece selection: `rand::make_rng()` for entropy seeding,
   `StdRng::seed_from_u64` in tests, `RngExt::random_range` to pick a piece.

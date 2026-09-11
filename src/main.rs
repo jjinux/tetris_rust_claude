@@ -13,78 +13,39 @@
 mod model;
 mod view;
 
-use std::io::{self, Write};
+use std::io;
 use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
 
-use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
-use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
+use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
+use ratatui::DefaultTerminal;
 
 use crate::model::{Game, GameState};
 
 /// How long to wait for a key when no fall is scheduled (intro, pause, over).
 const IDLE_TIMEOUT: Duration = Duration::from_millis(100);
 
-/// Puts the terminal into "game mode" and guarantees it is put back.
-///
-/// This is the RAII pattern (Go would use `defer`). Creating the guard sets up
-/// the terminal, and its `Drop` impl tears it down when the guard goes out of
-/// scope, whether `main` returns normally, returns an error via `?`, or
-/// unwinds from a panic.
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn new() -> io::Result<TerminalGuard> {
-        // Raw mode: keys reach us immediately, one at a time, without echo,
-        // and Ctrl-C is delivered as a key instead of killing the process.
-        enable_raw_mode()?;
-        // The alternate screen is a second buffer; leaving it restores
-        // whatever the user had in the terminal before the game.
-        execute!(io::stdout(), EnterAlternateScreen, Hide)?;
-
-        // If we panic, Rust prints the message *before* unwinding runs our
-        // `Drop`, so it would land on the alternate screen and vanish. This
-        // hook restores the terminal first, then runs the default printer.
-        let default_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            restore_terminal();
-            default_hook(info);
-        }));
-
-        Ok(TerminalGuard)
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        restore_terminal();
-    }
-}
-
-/// Errors are ignored here on purpose: this runs during cleanup, and there is
-/// nothing useful left to do if restoring the terminal fails.
-fn restore_terminal() {
-    let _ = execute!(io::stdout(), Show, LeaveAlternateScreen);
-    let _ = disable_raw_mode();
-}
-
 /// `main` can return a `Result`. On `Err`, Rust prints the error (via `Debug`)
 /// and exits with a non-zero status, so `?` works all the way up here.
 fn main() -> io::Result<()> {
-    let _guard = TerminalGuard::new()?;
-    // Buffer everything so each frame is written in one system call. The
-    // default 8 KiB buffer is smaller than a frame, which would split it and
-    // let the terminal paint a half-drawn screen.
-    let mut out = io::BufWriter::with_capacity(64 * 1024, io::stdout());
-    let mut game = Game::new();
+    // `ratatui::try_init` enables raw mode, switches to the alternate screen,
+    // and installs a panic hook that restores the terminal before the panic
+    // message is printed. `restore` undoes it. This is ratatui's recommended
+    // shape: run the real program in a separate function so that `restore`
+    // runs whether `run` returned `Ok` or `Err`.
+    let mut terminal = ratatui::try_init()?;
+    let result = run(&mut terminal);
+    ratatui::restore();
+    result
+}
 
-    view::clear(&mut out)?;
-    // Only redraw when something changed. Redrawing every time `poll` wakes
-    // up would be wasted work and, on many terminals, visible flicker.
+/// The event loop.
+fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
+    let mut game = Game::new();
+    // Only redraw when something changed. ratatui would send nothing for an
+    // identical frame anyway, but skipping the work entirely is free.
     let mut dirty = true;
     loop {
         // Fire the fall timer if it is due.
@@ -96,7 +57,7 @@ fn main() -> io::Result<()> {
         // Draw *before* waiting for input, so a tick or key press shows up
         // immediately rather than after the next wait finishes.
         if dirty {
-            view::render(&mut out, &game)?;
+            draw(terminal, &game)?;
             dirty = false;
         }
 
@@ -112,26 +73,35 @@ fn main() -> io::Result<()> {
                 // releases.
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if handle_key(&mut game, key).is_break() {
-                        break;
+                        return Ok(());
                     }
                     dirty = true;
                 }
-                // The terminal was resized, so the background needs
-                // repainting before the next frame. If it is now too small
-                // to show the board, pause so the player doesn't lose a
-                // piece they can't see.
+                // ratatui notices the new size on the next draw. If the
+                // window is now too small to show the board, pause so the
+                // player doesn't lose a piece they can't see.
                 Event::Resize(columns, rows) => {
                     if !view::fits(columns, rows) && game.state() == GameState::Started {
                         game.pause();
                     }
-                    view::clear(&mut out)?;
                     dirty = true;
                 }
                 _ => {}
             }
         }
     }
-    out.flush()
+}
+
+/// Render one frame.
+///
+/// `Terminal::draw` gives the closure a `Frame` to paint into, then diffs it
+/// against the previous frame and writes only the changed cells. The
+/// synchronized-update markers around it ask terminals that support them to
+/// paint those changes all at once.
+fn draw(terminal: &mut DefaultTerminal, game: &Game) -> io::Result<()> {
+    execute!(io::stdout(), BeginSynchronizedUpdate)?;
+    terminal.draw(|frame| view::render(frame, game))?;
+    execute!(io::stdout(), EndSynchronizedUpdate)
 }
 
 /// Dispatch one key press to the model. Returns `ControlFlow::Break` to quit.

@@ -1,32 +1,33 @@
-//! The view: draws a `Game` onto the terminal with crossterm.
+//! The view: draws a `Game` with ratatui.
 //!
-//! crossterm works by writing ANSI escape sequences to a `Write` (normally
-//! stdout). `queue!` appends commands to the writer's buffer; nothing is sent
-//! until we `flush()`.
+//! ratatui is a framework built on top of crossterm (and other backends). We
+//! describe a whole frame by painting into an in-memory `Buffer`; ratatui keeps
+//! the previous frame's buffer too, diffs the two, and writes only the cells
+//! that changed to the terminal. That is the same double-buffering trick that
+//! termbox used in the Go version, so the view can simply draw *everything*
+//! every frame and let the library work out the minimal update.
 //!
-//! Unlike termbox in the Go version, crossterm has no back buffer: it does not
-//! diff frames and send only the changed cells, it sends exactly what we
-//! queue. To avoid flicker we therefore (1) paint the background only once, in
-//! `clear`, rather than every frame, (2) let the controller skip frames when
-//! nothing changed, and (3) wrap each frame in a "synchronized update" so
-//! terminals that support it paint the frame atomically.
+//! Drawing is organized around the `Widget` trait: anything that can render
+//! itself into a rectangle of a `Buffer`. ratatui ships widgets such as
+//! `Paragraph` and `Block`; the board is a custom one defined below.
 
-use std::io::{self, Write};
-
-use crossterm::cursor::MoveTo;
-use crossterm::queue;
-use crossterm::style::{Color, Print, SetBackgroundColor, SetForegroundColor};
-use crossterm::terminal::{self, BeginSynchronizedUpdate, EndSynchronizedUpdate};
+use ratatui::Frame;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Paragraph, Widget};
 
 use crate::model::{BOARD_HEIGHT, BOARD_WIDTH, Game, GameState, PieceKind};
 
-// Colors
-const BACKGROUND_COLOR: Color = Color::Blue;
+// Colors. ratatui's `Color::Blue` is the dark ANSI blue; the bright variants
+// are the `Light*` ones, which match the colors the Go version used.
+const BACKGROUND_COLOR: Color = Color::LightBlue;
 const BOARD_COLOR: Color = Color::Black;
-const TEXT_COLOR: Color = Color::Yellow;
+const TEXT_COLOR: Color = Color::LightYellow;
 const GHOST_COLOR: Color = Color::Black;
 
-// Layout. Terminal coordinates in crossterm are `u16`, so the constants are
+// Layout. Terminal coordinates in ratatui are `u16`, so the constants are
 // `u16` too and we only convert at the edges.
 const MARGIN_WIDTH: u16 = 2;
 const MARGIN_HEIGHT: u16 = 1;
@@ -85,185 +86,168 @@ pub fn fits(columns: u16, rows: u16) -> bool {
 
 /// The color used to draw a locked or falling square of the given kind.
 ///
-/// These follow the Go version except for S, which was `Blue`, the same as the
-/// background. `DarkYellow` renders as orange on most terminal palettes.
+/// These follow the Go version except for S, which was the same blue as the
+/// background there.
 fn piece_color(kind: PieceKind) -> Color {
     match kind {
-        PieceKind::T => Color::Red,
-        PieceKind::J => Color::Green,
-        PieceKind::L => Color::Yellow,
-        PieceKind::S => Color::DarkYellow,
-        PieceKind::Z => Color::Magenta,
-        PieceKind::I => Color::Cyan,
+        PieceKind::T => Color::LightRed,
+        PieceKind::J => Color::LightGreen,
+        PieceKind::L => Color::LightYellow,
+        PieceKind::S => Color::Yellow,
+        PieceKind::Z => Color::LightMagenta,
+        PieceKind::I => Color::LightCyan,
         PieceKind::O => Color::White,
     }
 }
 
-/// Paint the whole terminal in the background color and draw the title.
-///
-/// Call this once at startup and again whenever the terminal is resized. It is
-/// deliberately *not* part of `render`: repainting everything every frame is
-/// what makes a terminal flicker.
-///
-/// We paint every row explicitly instead of using crossterm's `Clear` because
-/// not all terminals fill cleared cells with the current background color.
-pub fn clear(out: &mut impl Write) -> io::Result<()> {
-    let (columns, rows) = terminal::size()?;
-    let blank_row = " ".repeat(usize::from(columns));
-    queue!(
-        out,
-        BeginSynchronizedUpdate,
-        SetBackgroundColor(BACKGROUND_COLOR)
-    )?;
-    for row in 0..rows {
-        queue!(out, MoveTo(0, row), Print(&blank_row))?;
-    }
-    print_at(out, TITLE_X, TITLE_Y, TEXT_COLOR, BACKGROUND_COLOR, TITLE)?;
-    queue!(out, EndSynchronizedUpdate)?;
-    out.flush()
+fn text_style() -> Style {
+    Style::new().fg(TEXT_COLOR).bg(BACKGROUND_COLOR)
 }
 
-/// Draw one frame: everything that can change from one moment to the next.
+/// Draw one complete frame into `frame`.
 ///
-/// Every cell this touches is overwritten with an explicit color, so there is
-/// no need to erase first. `out` is generic over anything that implements
-/// `Write`. In the game it is stdout; a test could pass a `Vec<u8>` and inspect
-/// the bytes.
-pub fn render(out: &mut impl Write, game: &Game) -> io::Result<()> {
-    queue!(out, BeginSynchronizedUpdate)?;
-    let (columns, rows) = terminal::size()?;
-    if fits(columns, rows) {
-        draw_board(out, game)?;
-        draw_ghost(out, game)?;
-        draw_status(out, game)?;
-    } else {
-        draw_too_small(out, columns, rows)?;
+/// This is called from `Terminal::draw`, which hands us a `Frame` for the
+/// whole terminal and, after we return, flushes the changed cells.
+pub fn render(frame: &mut Frame, game: &Game) {
+    let area = frame.area();
+
+    // A `Block` with no borders and a background style is the ratatui way to
+    // paint a solid background.
+    frame.render_widget(Block::new().style(Style::new().bg(BACKGROUND_COLOR)), area);
+
+    if !fits(area.width, area.height) {
+        frame.render_widget(too_small_message(area), area);
+        return;
     }
-    queue!(out, EndSynchronizedUpdate)?;
-    out.flush()
+
+    frame.render_widget(
+        Paragraph::new(TITLE).style(text_style()),
+        Rect::new(TITLE_X, TITLE_Y, TITLE.len() as u16, TITLE_HEIGHT),
+    );
+    frame.render_widget(
+        Board { game },
+        Rect::new(
+            BOARD_X,
+            BOARD_Y,
+            BOARD_WIDTH as u16 * CELL_WIDTH,
+            BOARD_HEIGHT as u16,
+        ),
+    );
+    let status = status_lines(game);
+    let status_area = Rect::new(
+        INSTRUCTIONS_X,
+        INSTRUCTIONS_Y,
+        area.width - INSTRUCTIONS_X,
+        status.len() as u16,
+    );
+    frame.render_widget(Paragraph::new(status).style(text_style()), status_area);
+}
+
+/// The key legend followed by the level and line counters and, when the game
+/// is over, "GAME OVER!".
+///
+/// The `'static` lifetime on `Line` says these lines own their text (or
+/// borrow string literals, which live forever) rather than borrowing from
+/// `game`.
+fn status_lines(game: &Game) -> Vec<Line<'static>> {
+    // `iter().copied()` yields `&str` values instead of `&&str` references.
+    let mut lines: Vec<Line> = INSTRUCTIONS.iter().copied().map(Line::from).collect();
+    lines.push(Line::from(""));
+    lines.push(Line::from(format!("Level: {}", game.level())));
+    lines.push(Line::from(format!("Lines: {}", game.num_lines())));
+    if game.state() == GameState::Over {
+        lines.push(Line::from(""));
+        lines.push(Line::from("GAME OVER!"));
+    }
+    lines
 }
 
 /// Tell the player the window is too small instead of drawing a mangled board.
-fn draw_too_small(out: &mut impl Write, columns: u16, rows: u16) -> io::Result<()> {
-    let lines = [
-        "Terminal too small.".to_string(),
-        format!("Need at least {MIN_COLUMNS}x{MIN_ROWS}, have {columns}x{rows}."),
-        "Resize the window, or press q to quit.".to_string(),
+fn too_small_message(area: Rect) -> Paragraph<'static> {
+    let lines = vec![
+        Line::from("Terminal too small."),
+        Line::from(format!(
+            "Need at least {MIN_COLUMNS}x{MIN_ROWS}, have {}x{}.",
+            area.width, area.height
+        )),
+        Line::from("Resize the window, or press q to quit."),
     ];
-    for (i, line) in lines.iter().enumerate() {
-        print_at(out, 0, i as u16, TEXT_COLOR, BACKGROUND_COLOR, line)?;
-    }
-    Ok(())
+    Paragraph::new(lines).style(text_style())
 }
 
-fn draw_board(out: &mut impl Write, game: &Game) -> io::Result<()> {
-    for y in 0..BOARD_HEIGHT {
-        for x in 0..BOARD_WIDTH {
-            // `map_or` handles both halves of the `Option` in one expression:
-            // the default for `None`, and a function to apply to `Some`.
-            let color = game.cell(x, y).map_or(BOARD_COLOR, piece_color);
-            draw_cell(out, x, y, color, ' ')?;
-        }
-    }
-    Ok(())
+/// The playing field: locked cells, the falling piece, and its ghost.
+///
+/// A custom widget is just a struct plus an `impl Widget`. It borrows the game
+/// for the duration of one frame, which is what the `'a` lifetime expresses:
+/// a `Board<'a>` cannot outlive the `&'a Game` it holds.
+struct Board<'a> {
+    game: &'a Game,
 }
 
-/// Show where the falling piece will land, as `*`s in the piece's color.
-fn draw_ghost(out: &mut impl Write, game: &Game) -> io::Result<()> {
-    let Some(piece) = game.piece() else {
-        return Ok(());
-    };
-    let color = piece_color(piece.kind);
-    for (x, y) in game.ghost_cells() {
-        // Ghost cells can only be on the board, but `try_from` keeps the
-        // conversion honest instead of `as`-casting a possibly negative value.
-        if let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) {
-            draw_cell(out, x, y, color, '*')?;
+impl Widget for Board<'_> {
+    /// `render` takes `self` by value: widgets are cheap, throwaway values
+    /// built fresh each frame.
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        for y in 0..BOARD_HEIGHT {
+            for x in 0..BOARD_WIDTH {
+                // `map_or` handles both halves of the `Option` in one
+                // expression: the default for `None`, and a function to
+                // apply to `Some`.
+                let color = self.game.cell(x, y).map_or(BOARD_COLOR, piece_color);
+                draw_cell(buf, area, x, y, color, ' ');
+            }
+        }
+
+        let Some(piece) = self.game.piece() else {
+            return;
+        };
+        let color = piece_color(piece.kind);
+        for (x, y) in self.game.ghost_cells() {
+            // Ghost cells can only be on the board, but `try_from` keeps the
+            // conversion honest instead of `as`-casting a possibly negative
+            // value.
+            if let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) {
+                draw_cell(buf, area, x, y, color, '*');
+            }
         }
     }
-    Ok(())
 }
 
 /// Draw one board cell (two characters wide) at board coordinates `(x, y)`.
-fn draw_cell(out: &mut impl Write, x: usize, y: usize, color: Color, ch: char) -> io::Result<()> {
-    let screen_x = BOARD_X + x as u16 * CELL_WIDTH;
-    let screen_y = BOARD_Y + y as u16;
-    let text: String = std::iter::repeat_n(ch, usize::from(CELL_WIDTH)).collect();
-    print_at(out, screen_x, screen_y, GHOST_COLOR, color, &text)
-}
-
-/// Draw the key legend, the level and line counters, and "GAME OVER!".
-fn draw_status(out: &mut impl Write, game: &Game) -> io::Result<()> {
-    // `enumerate()` pairs each item with its index, like Go's `for i, v := range`.
-    for (i, line) in INSTRUCTIONS.iter().enumerate() {
-        print_at(
-            out,
-            INSTRUCTIONS_X,
-            INSTRUCTIONS_Y + i as u16,
-            TEXT_COLOR,
-            BACKGROUND_COLOR,
-            line,
-        )?;
+fn draw_cell(buf: &mut Buffer, area: Rect, x: usize, y: usize, color: Color, ch: char) {
+    let screen_x = area.x + x as u16 * CELL_WIDTH;
+    let screen_y = area.y + y as u16;
+    for i in 0..CELL_WIDTH {
+        // `cell_mut` returns `None` for positions outside the buffer, so a
+        // too-small buffer is clipped rather than causing a panic.
+        if let Some(cell) = buf.cell_mut((screen_x + i, screen_y)) {
+            cell.set_char(ch).set_fg(GHOST_COLOR).set_bg(color);
+        }
     }
-    let status_y = INSTRUCTIONS_Y + INSTRUCTIONS.len() as u16 + 1;
-    // Because nothing erases the screen between frames, each line is padded
-    // to a fixed width (`{:<12}` left-aligns in 12 columns). Otherwise
-    // "Lines: 12" followed by "Lines: 0" after a restart would leave a stray
-    // "2" on screen.
-    let level = format!("{:<12}", format!("Level: {}", game.level()));
-    let lines = format!("{:<12}", format!("Lines: {}", game.num_lines()));
-    let game_over = if game.state() == GameState::Over {
-        "GAME OVER!"
-    } else {
-        "          "
-    };
-    print_at(
-        out,
-        INSTRUCTIONS_X,
-        status_y,
-        TEXT_COLOR,
-        BACKGROUND_COLOR,
-        &level,
-    )?;
-    print_at(
-        out,
-        INSTRUCTIONS_X,
-        status_y + 1,
-        TEXT_COLOR,
-        BACKGROUND_COLOR,
-        &lines,
-    )?;
-    print_at(
-        out,
-        INSTRUCTIONS_X,
-        status_y + 3,
-        TEXT_COLOR,
-        BACKGROUND_COLOR,
-        game_over,
-    )
 }
 
-/// Write `text` at screen position `(x, y)` in the given colors.
-fn print_at(
-    out: &mut impl Write,
-    x: u16,
-    y: u16,
-    fg: Color,
-    bg: Color,
-    text: &str,
-) -> io::Result<()> {
-    queue!(
-        out,
-        MoveTo(x, y),
-        SetForegroundColor(fg),
-        SetBackgroundColor(bg),
-        Print(text)
-    )
-}
-
+/// View tests render into ratatui's `TestBackend`, an in-memory terminal, and
+/// then inspect the resulting `Buffer`. No real terminal is involved.
 #[cfg(test)]
 mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
     use super::*;
+
+    fn render_to_buffer(game: &Game, width: u16, height: u16) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| render(frame, game)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    /// The text on one row of the buffer, with trailing spaces removed.
+    fn row_text(buf: &Buffer, y: u16) -> String {
+        let text: String = (0..buf.area().width)
+            .map(|x| buf[(x, y)].symbol())
+            .collect();
+        text.trim_end().to_string()
+    }
 
     #[test]
     fn longest_finds_the_longest_line() {
@@ -280,5 +264,62 @@ mod tests {
         assert!(fits(MIN_COLUMNS, MIN_ROWS));
         assert!(!fits(MIN_COLUMNS - 1, MIN_ROWS));
         assert!(!fits(MIN_COLUMNS, MIN_ROWS - 1));
+    }
+
+    #[test]
+    fn intro_screen_shows_title_legend_and_empty_board() {
+        let game = Game::with_seed(1);
+        let buf = render_to_buffer(&game, 60, 24);
+
+        assert_eq!(row_text(&buf, TITLE_Y), format!("  {TITLE}"));
+        assert_eq!(
+            &row_text(&buf, INSTRUCTIONS_Y)[24..],
+            "Goal: Fill in 5 lines!"
+        );
+        assert_eq!(&row_text(&buf, INSTRUCTIONS_Y + 11)[24..], "Level: 1");
+        assert_eq!(&row_text(&buf, INSTRUCTIONS_Y + 12)[24..], "Lines: 0");
+        assert!(!row_text(&buf, INSTRUCTIONS_Y + 14).contains("GAME OVER"));
+
+        // Every board cell is black; the margin around it is the background.
+        for y in 0..BOARD_HEIGHT as u16 {
+            for x in 0..BOARD_WIDTH as u16 * CELL_WIDTH {
+                assert_eq!(buf[(BOARD_X + x, BOARD_Y + y)].bg, BOARD_COLOR);
+            }
+        }
+        assert_eq!(buf[(0, 0)].bg, BACKGROUND_COLOR);
+        assert_eq!(buf[(BOARD_X - 1, BOARD_Y)].bg, BACKGROUND_COLOR);
+        assert_eq!(buf[(BOARD_END_X, BOARD_Y)].bg, BACKGROUND_COLOR);
+    }
+
+    #[test]
+    fn falling_piece_and_ghost_are_drawn_in_the_piece_color() {
+        let mut game = Game::with_seed(1);
+        game.start();
+        let piece = *game.piece().expect("start spawns a piece");
+        let buf = render_to_buffer(&game, 60, 24);
+
+        for (x, y) in piece.cells() {
+            let cell = &buf[(BOARD_X + x as u16 * CELL_WIDTH, BOARD_Y + y as u16)];
+            assert_eq!(cell.bg, piece_color(piece.kind));
+            assert_eq!(cell.symbol(), " ");
+        }
+        assert!(!game.ghost_cells().is_empty());
+        for (x, y) in game.ghost_cells() {
+            let cell = &buf[(BOARD_X + x as u16 * CELL_WIDTH, BOARD_Y + y as u16)];
+            assert_eq!(cell.bg, piece_color(piece.kind));
+            assert_eq!(cell.symbol(), "*");
+        }
+    }
+
+    #[test]
+    fn too_small_terminal_shows_a_message_instead_of_the_board() {
+        let game = Game::with_seed(1);
+        let buf = render_to_buffer(&game, 40, 15);
+        assert_eq!(row_text(&buf, 0), "Terminal too small.");
+        assert_eq!(row_text(&buf, 1), "Need at least 48x20, have 40x15.");
+        assert_eq!(row_text(&buf, 2), "Resize the window, or press q to quit.");
+        // Nothing below the message: no board, no legend.
+        assert_eq!(row_text(&buf, BOARD_Y), "");
+        assert_eq!(buf[(BOARD_X, BOARD_Y)].bg, BACKGROUND_COLOR);
     }
 }
