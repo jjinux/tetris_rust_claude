@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 crossterm = "0.29.0"
 rand = "0.10.2"
+ratatui = "0.30.2"
 
 # Cargo has no "scripts" section like package.json, but it does let you
 # configure lints for the whole crate here instead of with attributes in

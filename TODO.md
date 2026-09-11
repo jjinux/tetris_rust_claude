@@ -106,3 +106,11 @@ Decisions JJ made are marked "Decision (JJ)".
 - [x] Nice-to-haves:
   - [x] Guard against terminals that are too small to draw the board. Shows a message with the
         required size, and auto-pauses a running game when a resize makes it too small.
+- [x] Rendering follow-ups (2026-09-11):
+  - [x] Investigate a hand-rolled double buffer (draw into a back buffer, diff against the front
+        buffer, write only the changes, swap).
+  - [x] Investigate adopting ratatui, which provides exactly that plus widgets and a test backend.
+  - [x] Decision (JJ): adopt ratatui because it is a better base for future games.
+  - [x] Port the view to ratatui: `Board` is a custom `Widget`, text is `Paragraph`s, the
+        controller uses `ratatui::try_init` / `restore` and `Terminal::draw`.
+  - [x] Add view tests with `TestBackend` (intro screen, piece and ghost colors, too-small message).
