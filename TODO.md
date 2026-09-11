@@ -89,7 +89,7 @@ Decisions JJ made are marked "Decision (JJ)".
         one-interval render lag after each fall tick.
   - [x] JJ play-tested: worked but flickered. Fixed by clearing the screen only at startup and
         on resize, redrawing only when state changed, and wrapping frames in synchronized updates.
-  - [ ] JJ re-tests the flicker fix in a real terminal.
+  - [x] JJ re-tested the flicker fix in a real terminal: fixed.
 - [x] Write a basic CLAUDE.md.
   - [x] Project purpose, layout, how to build/test/lint, coding-style expectations
         (intermediate Rust, comment interesting constructs), workflow (update TODO.md, commit to main).
