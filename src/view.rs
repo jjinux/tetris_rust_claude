@@ -42,6 +42,13 @@ const BOARD_END_X: u16 = BOARD_X + BOARD_WIDTH as u16 * CELL_WIDTH;
 const INSTRUCTIONS_X: u16 = BOARD_END_X + MARGIN_WIDTH;
 const INSTRUCTIONS_Y: u16 = BOARD_Y;
 
+/// Rows of the status column, relative to `INSTRUCTIONS_Y`: the key legend,
+/// a blank line, the two counters, a blank line, and "GAME OVER!".
+const LEVEL_ROW: u16 = INSTRUCTIONS.len() as u16 + 1;
+const LINES_ROW: u16 = LEVEL_ROW + 1;
+const GAME_OVER_ROW: u16 = LINES_ROW + 2;
+const STATUS_ROWS: u16 = GAME_OVER_ROW + 1;
+
 const TITLE: &str = "TETRIS IN RUST (BY CLAUDE CODE)";
 
 const INSTRUCTIONS: [&str; 10] = [
@@ -133,14 +140,16 @@ pub fn render(frame: &mut Frame, game: &Game) {
             BOARD_HEIGHT as u16,
         ),
     );
-    let status = status_lines(game);
     let status_area = Rect::new(
         INSTRUCTIONS_X,
         INSTRUCTIONS_Y,
         area.width - INSTRUCTIONS_X,
-        status.len() as u16,
+        STATUS_ROWS,
     );
-    frame.render_widget(Paragraph::new(status).style(text_style()), status_area);
+    frame.render_widget(
+        Paragraph::new(status_lines(game)).style(text_style()),
+        status_area,
+    );
 }
 
 /// The key legend followed by the level and line counters and, when the game
@@ -150,14 +159,16 @@ pub fn render(frame: &mut Frame, game: &Game) {
 /// borrow string literals, which live forever) rather than borrowing from
 /// `game`.
 fn status_lines(game: &Game) -> Vec<Line<'static>> {
-    // `iter().copied()` yields `&str` values instead of `&&str` references.
-    let mut lines: Vec<Line> = INSTRUCTIONS.iter().copied().map(Line::from).collect();
-    lines.push(Line::from(""));
-    lines.push(Line::from(format!("Level: {}", game.level())));
-    lines.push(Line::from(format!("Lines: {}", game.num_lines())));
+    // Start with every row blank, then fill in the ones that have text, so
+    // the `*_ROW` constants are the single source of truth for the layout.
+    let mut lines = vec![Line::default(); STATUS_ROWS as usize];
+    for (i, text) in INSTRUCTIONS.iter().enumerate() {
+        lines[i] = Line::from(*text);
+    }
+    lines[LEVEL_ROW as usize] = Line::from(format!("Level: {}", game.level()));
+    lines[LINES_ROW as usize] = Line::from(format!("Lines: {}", game.num_lines()));
     if game.state() == GameState::Over {
-        lines.push(Line::from(""));
-        lines.push(Line::from("GAME OVER!"));
+        lines[GAME_OVER_ROW as usize] = Line::from("GAME OVER!");
     }
     lines
 }
@@ -235,6 +246,15 @@ mod tests {
 
     use super::*;
 
+    const SEED: u64 = 1;
+
+    /// A comfortable terminal, larger than the minimum in both directions.
+    const ROOMY_COLUMNS: u16 = MIN_COLUMNS + 12;
+    const ROOMY_ROWS: u16 = MIN_ROWS + 4;
+    /// A terminal that is too small in both directions.
+    const CRAMPED_COLUMNS: u16 = MIN_COLUMNS - 8;
+    const CRAMPED_ROWS: u16 = MIN_ROWS - 5;
+
     fn render_to_buffer(game: &Game, width: u16, height: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| render(frame, game)).unwrap();
@@ -249,6 +269,14 @@ mod tests {
         text.trim_end().to_string()
     }
 
+    /// The text in the status column on the given row of it.
+    fn status_text(buf: &Buffer, row: u16) -> String {
+        row_text(buf, INSTRUCTIONS_Y + row)
+            .get(INSTRUCTIONS_X as usize..)
+            .unwrap_or("")
+            .to_string()
+    }
+
     #[test]
     fn longest_finds_the_longest_line() {
         assert_eq!(longest(&["a", "abc", "ab"]), 3);
@@ -257,10 +285,15 @@ mod tests {
 
     #[test]
     fn minimum_size_covers_the_layout() {
-        // Margin 2 + board 10 * 2 + margin 2 = 24 columns, then the legend
-        // and a trailing margin.
-        assert_eq!(MIN_COLUMNS, 24 + "Goal: Fill in 5 lines!".len() as u16 + 2);
-        assert_eq!(MIN_ROWS, 3 + 16 + 1);
+        // Pinned values so a layout change is a deliberate test update:
+        // margins 2 + board 20 + margin 2 + legend 22 + margin 2, and
+        // title row 3 + board 16 + margin 1.
+        assert_eq!(MIN_COLUMNS, 48);
+        assert_eq!(MIN_ROWS, 20);
+        assert!(
+            STATUS_ROWS <= BOARD_HEIGHT as u16,
+            "status column fits beside the board"
+        );
         assert!(fits(MIN_COLUMNS, MIN_ROWS));
         assert!(!fits(MIN_COLUMNS - 1, MIN_ROWS));
         assert!(!fits(MIN_COLUMNS, MIN_ROWS - 1));
@@ -268,17 +301,15 @@ mod tests {
 
     #[test]
     fn intro_screen_shows_title_legend_and_empty_board() {
-        let game = Game::with_seed(1);
-        let buf = render_to_buffer(&game, 60, 24);
+        let game = Game::with_seed(SEED);
+        let buf = render_to_buffer(&game, ROOMY_COLUMNS, ROOMY_ROWS);
 
-        assert_eq!(row_text(&buf, TITLE_Y), format!("  {TITLE}"));
-        assert_eq!(
-            &row_text(&buf, INSTRUCTIONS_Y)[24..],
-            "Goal: Fill in 5 lines!"
-        );
-        assert_eq!(&row_text(&buf, INSTRUCTIONS_Y + 11)[24..], "Level: 1");
-        assert_eq!(&row_text(&buf, INSTRUCTIONS_Y + 12)[24..], "Lines: 0");
-        assert!(!row_text(&buf, INSTRUCTIONS_Y + 14).contains("GAME OVER"));
+        let title_indent = " ".repeat(TITLE_X as usize);
+        assert_eq!(row_text(&buf, TITLE_Y), format!("{title_indent}{TITLE}"));
+        assert_eq!(status_text(&buf, 0), INSTRUCTIONS[0]);
+        assert_eq!(status_text(&buf, LEVEL_ROW), "Level: 1");
+        assert_eq!(status_text(&buf, LINES_ROW), "Lines: 0");
+        assert_eq!(status_text(&buf, GAME_OVER_ROW), "");
 
         // Every board cell is black; the margin around it is the background.
         for y in 0..BOARD_HEIGHT as u16 {
@@ -293,10 +324,10 @@ mod tests {
 
     #[test]
     fn falling_piece_and_ghost_are_drawn_in_the_piece_color() {
-        let mut game = Game::with_seed(1);
+        let mut game = Game::with_seed(SEED);
         game.start();
         let piece = *game.piece().expect("start spawns a piece");
-        let buf = render_to_buffer(&game, 60, 24);
+        let buf = render_to_buffer(&game, ROOMY_COLUMNS, ROOMY_ROWS);
 
         for (x, y) in piece.cells() {
             let cell = &buf[(BOARD_X + x as u16 * CELL_WIDTH, BOARD_Y + y as u16)];
@@ -313,10 +344,15 @@ mod tests {
 
     #[test]
     fn too_small_terminal_shows_a_message_instead_of_the_board() {
-        let game = Game::with_seed(1);
-        let buf = render_to_buffer(&game, 40, 15);
+        let game = Game::with_seed(SEED);
+        let buf = render_to_buffer(&game, CRAMPED_COLUMNS, CRAMPED_ROWS);
         assert_eq!(row_text(&buf, 0), "Terminal too small.");
-        assert_eq!(row_text(&buf, 1), "Need at least 48x20, have 40x15.");
+        assert_eq!(
+            row_text(&buf, 1),
+            format!(
+                "Need at least {MIN_COLUMNS}x{MIN_ROWS}, have {CRAMPED_COLUMNS}x{CRAMPED_ROWS}."
+            )
+        );
         assert_eq!(row_text(&buf, 2), "Resize the window, or press q to quit.");
         // Nothing below the message: no board, no legend.
         assert_eq!(row_text(&buf, BOARD_Y), "");
