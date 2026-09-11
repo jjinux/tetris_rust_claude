@@ -44,8 +44,10 @@ Decisions JJ made are marked "Decision (JJ)".
   - [x] `git init` with `main` as the default branch.
   - [x] Add a `.gitignore` for Rust (`/target`) and macOS (`.DS_Store`).
   - [x] Commit after each milestone with clear messages.
-- [x] Use GitHub. Store things under @jjinux. Don't worry about using PRs. Just push to main.
+- [x] Use GitHub. Store things under @jjinux.
   - [x] Create a public repo `jjinux/tetris_rust_claude` with `gh repo create`.
+  - [x] Early work was pushed straight to `main`. Decision (JJ, 2026-09-11): from now on use
+        branches + pull requests, and Conventional Commits messages. Documented in CLAUDE.md.
   - [x] Add an MIT LICENSE.
 - [x] Get the test harness running.
   - [x] `cargo init --name tetris_rust_claude`.
