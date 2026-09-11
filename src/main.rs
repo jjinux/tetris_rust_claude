@@ -82,15 +82,23 @@ fn main() -> io::Result<()> {
     let mut out = io::BufWriter::with_capacity(64 * 1024, io::stdout());
     let mut game = Game::new();
 
+    view::clear(&mut out)?;
+    // Only redraw when something changed. Redrawing every time `poll` wakes
+    // up would be wasted work and, on many terminals, visible flicker.
+    let mut dirty = true;
     loop {
         // Fire the fall timer if it is due.
         if game.next_fall().is_some_and(|due| Instant::now() >= due) {
             game.tick();
+            dirty = true;
         }
 
         // Draw *before* waiting for input, so a tick or key press shows up
         // immediately rather than after the next wait finishes.
-        view::render(&mut out, &game)?;
+        if dirty {
+            view::render(&mut out, &game)?;
+            dirty = false;
+        }
 
         // Wait for a key until the next fall is due (or a short idle timeout
         // when nothing is falling). `saturating_duration_since` clamps to
@@ -99,16 +107,22 @@ fn main() -> io::Result<()> {
             due.saturating_duration_since(Instant::now())
         });
         if event::poll(timeout)? {
-            // This is a "let chain" (Rust 2024): `if let` and plain boolean
-            // conditions joined by `&&`, evaluated left to right. Only key
-            // *presses* are handled (some platforms also report releases);
-            // every other event, such as a resize, just falls through to the
-            // redraw at the top of the loop.
-            if let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-                && handle_key(&mut game, key).is_break()
-            {
-                break;
+            match event::read()? {
+                // Only key *presses* are handled; some platforms also report
+                // releases.
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    if handle_key(&mut game, key).is_break() {
+                        break;
+                    }
+                    dirty = true;
+                }
+                // The terminal was resized, so the background needs
+                // repainting before the next frame.
+                Event::Resize(..) => {
+                    view::clear(&mut out)?;
+                    dirty = true;
+                }
+                _ => {}
             }
         }
     }

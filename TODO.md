@@ -87,7 +87,9 @@ Decisions JJ made are marked "Decision (JJ)".
   - [x] Smoke-tested in a pseudo-terminal (starts, takes keys, exits cleanly).
   - [x] Claude play-tested via a pseudo-terminal + pyte screen dump; found and fixed a
         one-interval render lag after each fall tick.
-  - [ ] JJ play-tests manually in a real terminal.
+  - [x] JJ play-tested: worked but flickered. Fixed by clearing the screen only at startup and
+        on resize, redrawing only when state changed, and wrapping frames in synchronized updates.
+  - [ ] JJ re-tests the flicker fix in a real terminal.
 - [x] Write a basic CLAUDE.md.
   - [x] Project purpose, layout, how to build/test/lint, coding-style expectations
         (intermediate Rust, comment interesting constructs), workflow (update TODO.md, commit to main).

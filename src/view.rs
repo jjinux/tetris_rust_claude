@@ -1,17 +1,22 @@
 //! The view: draws a `Game` onto the terminal with crossterm.
 //!
 //! crossterm works by writing ANSI escape sequences to a `Write` (normally
-//! stdout). `queue!` appends commands to the writer's buffer; nothing shows up
-//! until we `flush()`, which means the whole frame appears at once with no
-//! flicker. This is the same "draw into a buffer, then present" idea as
-//! termbox's `SetCell` + `Flush` in the Go version.
+//! stdout). `queue!` appends commands to the writer's buffer; nothing is sent
+//! until we `flush()`.
+//!
+//! Unlike termbox in the Go version, crossterm has no back buffer: it does not
+//! diff frames and send only the changed cells, it sends exactly what we
+//! queue. To avoid flicker we therefore (1) paint the background only once, in
+//! `clear`, rather than every frame, (2) let the controller skip frames when
+//! nothing changed, and (3) wrap each frame in a "synchronized update" so
+//! terminals that support it paint the frame atomically.
 
 use std::io::{self, Write};
 
 use crossterm::cursor::MoveTo;
 use crossterm::queue;
 use crossterm::style::{Color, Print, SetBackgroundColor, SetForegroundColor};
-use crossterm::terminal;
+use crossterm::terminal::{self, BeginSynchronizedUpdate, EndSynchronizedUpdate};
 
 use crate::model::{BOARD_HEIGHT, BOARD_WIDTH, Game, GameState, PieceKind};
 
@@ -64,31 +69,43 @@ fn piece_color(kind: PieceKind) -> Color {
     }
 }
 
-/// Draw one complete frame.
+/// Paint the whole terminal in the background color and draw the title.
 ///
-/// `out` is generic over anything that implements `Write`. In the game it is
-/// stdout; a test could pass a `Vec<u8>` and inspect the bytes.
-pub fn render(out: &mut impl Write, game: &Game) -> io::Result<()> {
-    clear_screen(out)?;
-    print_at(out, TITLE_X, TITLE_Y, TEXT_COLOR, BACKGROUND_COLOR, TITLE)?;
-    draw_board(out, game)?;
-    draw_ghost(out, game)?;
-    draw_instructions(out, game)?;
-    out.flush()
-}
-
-/// Paint the whole terminal in the background color.
+/// Call this once at startup and again whenever the terminal is resized. It is
+/// deliberately *not* part of `render`: repainting everything every frame is
+/// what makes a terminal flicker.
 ///
 /// We paint every row explicitly instead of using crossterm's `Clear` because
 /// not all terminals fill cleared cells with the current background color.
-fn clear_screen(out: &mut impl Write) -> io::Result<()> {
+pub fn clear(out: &mut impl Write) -> io::Result<()> {
     let (columns, rows) = terminal::size()?;
     let blank_row = " ".repeat(usize::from(columns));
-    queue!(out, SetBackgroundColor(BACKGROUND_COLOR))?;
+    queue!(
+        out,
+        BeginSynchronizedUpdate,
+        SetBackgroundColor(BACKGROUND_COLOR)
+    )?;
     for row in 0..rows {
         queue!(out, MoveTo(0, row), Print(&blank_row))?;
     }
-    Ok(())
+    print_at(out, TITLE_X, TITLE_Y, TEXT_COLOR, BACKGROUND_COLOR, TITLE)?;
+    queue!(out, EndSynchronizedUpdate)?;
+    out.flush()
+}
+
+/// Draw one frame: everything that can change from one moment to the next.
+///
+/// Every cell this touches is overwritten with an explicit color, so there is
+/// no need to erase first. `out` is generic over anything that implements
+/// `Write`. In the game it is stdout; a test could pass a `Vec<u8>` and inspect
+/// the bytes.
+pub fn render(out: &mut impl Write, game: &Game) -> io::Result<()> {
+    queue!(out, BeginSynchronizedUpdate)?;
+    draw_board(out, game)?;
+    draw_ghost(out, game)?;
+    draw_status(out, game)?;
+    queue!(out, EndSynchronizedUpdate)?;
+    out.flush()
 }
 
 fn draw_board(out: &mut impl Write, game: &Game) -> io::Result<()> {
@@ -127,7 +144,8 @@ fn draw_cell(out: &mut impl Write, x: usize, y: usize, color: Color, ch: char) -
     print_at(out, screen_x, screen_y, GHOST_COLOR, color, &text)
 }
 
-fn draw_instructions(out: &mut impl Write, game: &Game) -> io::Result<()> {
+/// Draw the key legend, the level and line counters, and "GAME OVER!".
+fn draw_status(out: &mut impl Write, game: &Game) -> io::Result<()> {
     // `enumerate()` pairs each item with its index, like Go's `for i, v := range`.
     for (i, line) in INSTRUCTIONS.iter().enumerate() {
         print_at(
@@ -140,8 +158,17 @@ fn draw_instructions(out: &mut impl Write, game: &Game) -> io::Result<()> {
         )?;
     }
     let status_y = INSTRUCTIONS_Y + INSTRUCTIONS.len() as u16 + 1;
-    let level = format!("Level: {}", game.level());
-    let lines = format!("Lines: {}", game.num_lines());
+    // Because nothing erases the screen between frames, each line is padded
+    // to a fixed width (`{:<12}` left-aligns in 12 columns). Otherwise
+    // "Lines: 12" followed by "Lines: 0" after a restart would leave a stray
+    // "2" on screen.
+    let level = format!("{:<12}", format!("Level: {}", game.level()));
+    let lines = format!("{:<12}", format!("Lines: {}", game.num_lines()));
+    let game_over = if game.state() == GameState::Over {
+        "GAME OVER!"
+    } else {
+        "          "
+    };
     print_at(
         out,
         INSTRUCTIONS_X,
@@ -158,17 +185,14 @@ fn draw_instructions(out: &mut impl Write, game: &Game) -> io::Result<()> {
         BACKGROUND_COLOR,
         &lines,
     )?;
-    if game.state() == GameState::Over {
-        print_at(
-            out,
-            INSTRUCTIONS_X,
-            status_y + 3,
-            TEXT_COLOR,
-            BACKGROUND_COLOR,
-            "GAME OVER!",
-        )?;
-    }
-    Ok(())
+    print_at(
+        out,
+        INSTRUCTIONS_X,
+        status_y + 3,
+        TEXT_COLOR,
+        BACKGROUND_COLOR,
+        game_over,
+    )
 }
 
 /// Write `text` at screen position `(x, y)` in the given colors.
