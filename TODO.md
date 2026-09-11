@@ -44,8 +44,8 @@ Decisions JJ made are marked "Decision (JJ)".
   - [x] `git init` with `main` as the default branch.
   - [x] Add a `.gitignore` for Rust (`/target`) and macOS (`.DS_Store`).
   - [x] Commit after each milestone with clear messages.
-- [ ] Use GitHub. Store things under @jjinux. Don't worry about using PRs. Just push to main.
-  - [ ] Create a public repo `jjinux/tetris_rust_claude` with `gh repo create`.
+- [x] Use GitHub. Store things under @jjinux. Don't worry about using PRs. Just push to main.
+  - [x] Create a public repo `jjinux/tetris_rust_claude` with `gh repo create`.
   - [x] Add an MIT LICENSE.
 - [x] Get the test harness running.
   - [x] `cargo init --name tetris_rust_claude`.
