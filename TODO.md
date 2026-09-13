@@ -114,3 +114,8 @@ Decisions JJ made are marked "Decision (JJ)".
   - [x] Port the view to ratatui: `Board` is a custom `Widget`, text is `Paragraph`s, the
         controller uses `ratatui::try_init` / `restore` and `Terminal::draw`.
   - [x] Add view tests with `TestBackend` (intro screen, piece and ghost colors, too-small message).
+- [x] Announce it (2026-09-12):
+  - [x] Blog about it: https://www.jjinux.com/2026/09/rust-tetris-in-rust-by-claude-code.html
+  - [x] Post it to Bluesky, CC'ing the This Week in Rust and Ratatui teams:
+        https://bsky.app/profile/jjinux.bsky.social/post/3mveiu2gqc52g
+  - [x] Share it with friends.
