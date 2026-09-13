@@ -12,6 +12,8 @@ the way an intermediate Rust programmer would write it, and comments call out
 Rust constructs that are worth knowing about (RAII guards, `Option` instead of
 sentinel values, `impl Iterator`, let chains, and so on).
 
+I've carefully reviewed all the code.
+
 ## Requirements
 
 - A Rust toolchain (install with [rustup](https://rustup.rs)). The project uses
