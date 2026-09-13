@@ -167,31 +167,45 @@ MIT. See [LICENSE](LICENSE).
 
 For the sake of posterity, this was the initial prompt I used:
 
-> I am a software engineer building a sample project to practice using Claude and Rust. I know many programming languages, but I only know a little bit of Rust.
->
-> I am building a console-based version of Tetris in Rust. This is something I like to do when learning a new programming language. The last time I did it, I used Golang. Please see ~/Dropbox/projects/gotetris/. The goal is to translate that into Rust.
->
-> Code it the way that an intermediate Rust programmer would. If you use interesting language constructs, please leave a comment that explains the useful programming construct.
->
-> Before writing any code, I want you to start by creating a plan. Save that plan to a file named TODO.md. This file should be a nested bullet list of TODOs where each TODO has a checkbox. For instance:
->
-> - [ ] Come up with a plan:
->   - [ ] Decide on a library to use to do the terminal-based graphics.
->   - [ ] Is there any reason we should use threads?
->   - [ ] Figure out a strategy for testing.
->   - [ ] Are there standard things in Rust to control linting and formatting?
-> - [ ] Use Git.
-> - [ ] Use GitHub. Store things under @jjinux. Don't worry about using PRs. Just push to main or master.
-> - [ ] Get the test harness running.
-> - [ ] Set up linting and formatting.
-> - [ ] Port the main game play.
-> - [ ] Is there an equivalent of package.json for Rust that has simple scripts, such as to run the tests, linting, etc.?
-> - [ ] Write a basic CLAUDE.md.
-> - [ ] Write a basic README.md that explains what the project is and how to use it.
->   - [ ] The README.md should explain that this project is a port of a version that I wrote in Golang that Claude Code ported to help me learn Rust and Claude Code.
->
-> Please ask me questions. I am happy to provide guidance.
->
-> Feel free to add new TODOs in TODO.md, and please mark ones that you've already done as done.
->
-> The name of this project is "Tetris in Rust (by Claude Code)". The directory name is "tetris_rust_claude".
+I am a software engineer building a sample project to practice using Claude and
+Rust. I know many programming languages, but I only know a little bit of Rust.
+
+I am building a console-based version of Tetris in Rust. This is something I
+like to do when learning a new programming language. The last time I did it, I
+used Golang. Please see ~/Dropbox/projects/gotetris/. The goal is to translate
+that into Rust.
+
+Code it the way that an intermediate Rust programmer would. If you use
+interesting language constructs, please leave a comment that explains the
+useful programming construct.
+
+Before writing any code, I want you to start by creating a plan. Save that plan
+to a file named TODO.md. This file should be a nested bullet list of TODOs where
+each TODO has a checkbox. For instance:
+
+- [ ] Come up with a plan:
+  - [ ] Decide on a library to use to do the terminal-based graphics.
+  - [ ] Is there any reason we should use threads?
+  - [ ] Figure out a strategy for testing.
+  - [ ] Are there standard things in Rust to control linting and formatting?
+- [ ] Use Git.
+- [ ] Use GitHub. Store things under @jjinux. Don't worry about using PRs. Just
+      push to main or master.
+- [ ] Get the test harness running.
+- [ ] Set up linting and formatting.
+- [ ] Port the main game play.
+- [ ] Is there an equivalent of package.json for Rust that has simple scripts,
+      such as to run the tests, linting, etc.?
+- [ ] Write a basic CLAUDE.md.
+- [ ] Write a basic README.md that explains what the project is and how to use it.
+  - [ ] The README.md should explain that this project is a port of a version
+        that I wrote in Golang that Claude Code ported to help me learn Rust and
+        Claude Code.
+
+Please ask me questions. I am happy to provide guidance.
+
+Feel free to add new TODOs in TODO.md, and please mark ones that you've already
+done as done.
+
+The name of this project is "Tetris in Rust (by Claude Code)". The directory
+name is "tetris_rust_claude".
