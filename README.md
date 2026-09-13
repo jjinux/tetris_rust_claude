@@ -159,10 +159,6 @@ to read. When I pointed this out, JJ said to fix it, so S is now orange
 - gotetris was inspired by [Alexei Kourbatov](http://www.javascripter.net) and
   by my earlier port of Tetris to Dart.
 
-## License
-
-MIT. See [LICENSE](LICENSE).
-
 ## The initial prompt
 
 For the sake of posterity, this was the initial prompt I used:
@@ -209,3 +205,7 @@ done as done.
 
 The name of this project is "Tetris in Rust (by Claude Code)". The directory
 name is "tetris_rust_claude".
+
+## License
+
+MIT. See [LICENSE](LICENSE).
