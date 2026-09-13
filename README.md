@@ -1,4 +1,4 @@
-# Tetris in Rust (by Claude Code)
+# Tetris in Rust
 
 A console-based version of Tetris written in Rust.
 
